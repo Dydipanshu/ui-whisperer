@@ -39,6 +39,7 @@ const resetScope = () => {
   document.querySelectorAll(QUAKE_SELECTOR).forEach(show);
   show(document.querySelector(PANEL_CITY));
   show(document.querySelector(PANEL_QUAKE));
+  logger.debug("scope", "scope reset to full view");
 };
 
 const rankElements = (selector: string, attr: string) => {
@@ -120,6 +121,10 @@ export const ScopeView: React.FC<ScopeViewProps> = ({ mode = "all", cityId, limi
       keepTopN(QUAKE_SELECTOR, "mag", Math.max(1, limit));
       hide(document.querySelector(PANEL_CITY));
     }
+
+    const visibleCities = Array.from(document.querySelectorAll(CITY_SELECTOR)).filter((el) => (el as HTMLElement).style.display !== "none").length;
+    const visibleQuakes = Array.from(document.querySelectorAll(QUAKE_SELECTOR)).filter((el) => (el as HTMLElement).style.display !== "none").length;
+    logger.info("scope", "scope applied", { mode, visibleCities, visibleQuakes });
   }, [mode, cityId, limit]);
 
   return null;

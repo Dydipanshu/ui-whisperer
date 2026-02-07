@@ -17,6 +17,33 @@ const getMinLevel = (): LogLevel => {
 
 const canLog = (level: LogLevel) => LEVELS.indexOf(level) >= LEVELS.indexOf(getMinLevel());
 
+const normalizeDetails = (details: unknown) => {
+  if (details instanceof Error) {
+    return {
+      name: details.name,
+      message: details.message,
+      stack: details.stack,
+    };
+  }
+  if (details === undefined) return undefined;
+  try {
+    return JSON.parse(
+      JSON.stringify(details, (_, value) => {
+        if (value instanceof Error) {
+          return {
+            name: value.name,
+            message: value.message,
+            stack: value.stack,
+          };
+        }
+        return value;
+      })
+    );
+  } catch {
+    return { note: "unserializable_details" };
+  }
+};
+
 const sendToServer = async (payload: LogPayload) => {
   if (typeof window === "undefined") return;
   try {
@@ -33,16 +60,18 @@ const sendToServer = async (payload: LogPayload) => {
 const write = (level: LogLevel, scope: string, message: string, details?: unknown) => {
   if (!canLog(level)) return;
 
+  const normalizedDetails = normalizeDetails(details);
   const payload: LogPayload = {
     level,
     scope,
     message,
-    details,
+    details: normalizedDetails,
     timestamp: new Date().toISOString(),
   };
 
-  const fn = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
-  fn(`[${payload.timestamp}] [${level.toUpperCase()}] [${scope}] ${message}`, details ?? "");
+  // Use warn for app-level errors to avoid Next.js dev overlay for expected runtime failures.
+  const fn = level === "error" ? console.warn : level === "warn" ? console.warn : console.log;
+  fn(`[${payload.timestamp}] [${level.toUpperCase()}] [${scope}] ${message}`, normalizedDetails ?? "");
   void sendToServer(payload);
 };
 

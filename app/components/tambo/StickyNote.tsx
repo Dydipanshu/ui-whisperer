@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { withInteractable } from '@tambo-ai/react';
 import { z } from 'zod';
 import { logger } from '@/app/utils/logger';
+import { X } from 'lucide-react';
 
 const placementSchema = z.enum(["top-right", "top-left", "bottom-right", "bottom-left", "center"]);
 
@@ -69,6 +70,7 @@ const StickyNoteBase: React.FC<StickyNoteProps> = ({
   offsetY = 0,
 }) => {
   const [position, setPosition] = useState({ left: x, top: y });
+  const [dismissed, setDismissed] = useState(false);
   const frameRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -110,21 +112,29 @@ const StickyNoteBase: React.FC<StickyNoteProps> = ({
     };
   }, [targetId, placement, offsetX, offsetY, x, y, text]);
 
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined' || dismissed) return null;
   
   return createPortal(
     <div
-      className="fixed p-4 w-60 bg-amber-100 border border-amber-300 shadow-lg -rotate-[1.2deg] rounded-md text-amber-950 z-[90] transition-all duration-300"
+      className="fixed w-60 rounded-md border border-amber-300 bg-amber-100 p-4 text-amber-950 shadow-lg transition-all duration-300"
       style={{
         left: position.left,
         top: position.top,
       }}
     >
-      <div className="flex justify-between items-center mb-2">
-         <div className="w-3 h-3 rounded-full bg-rose-400/70 shadow-sm" />
-         {targetId ? (
-           <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-800/80">{targetId}</span>
-         ) : null}
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-3 rounded-full bg-rose-400/70 shadow-sm" />
+          {targetId ? <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-800/80">{targetId}</span> : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          className="rounded p-1 text-amber-800/70 transition hover:bg-amber-200 hover:text-amber-950"
+          aria-label="Close note"
+        >
+          <X size={12} />
+        </button>
       </div>
       <p className="text-sm leading-relaxed font-medium">{text}</p>
     </div>,

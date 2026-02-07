@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
+import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  weight: ["400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
-  title: "Aurora Atlas",
-  description: "Live risk intelligence product using real-world APIs and generative UI",
+  title: "Nebula Sentinel",
+  description: "Live risk intelligence workspace with generative UI actions powered by Tambo",
 };
 
 export default function RootLayout({
@@ -14,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased bg-slate-50">
+      <body className={`${spaceGrotesk.variable} antialiased`}>
         <Providers>
           {children}
         </Providers>

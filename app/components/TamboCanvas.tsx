@@ -1,13 +1,28 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTamboThread } from "@tambo-ai/react";
+import { X } from "lucide-react";
 import { tamboComponents } from "../tambo-registry";
 import { logger } from "../utils/logger";
 
 type MessagePart = { type?: string; text?: string };
 type MessageComponent = { componentName?: string; props?: Record<string, unknown> };
 type ThreadMessage = { id?: string; role?: string; content?: MessagePart[]; component?: MessageComponent };
+
+type CanvasEntry = {
+  key: string;
+  componentName: string;
+  props: Record<string, unknown>;
+  source: "thread" | "local";
+};
+
+type LocalDispatch = {
+  components?: Array<{ componentName?: string; props?: Record<string, unknown> }>;
+  replace?: boolean;
+};
+
+const SIDE_EFFECT_COMPONENTS = new Set(["HighlightOverlay", "ScopeView", "StickyNote"]);
 
 const textOf = (m: ThreadMessage) =>
   (m.content ?? [])
@@ -23,62 +38,120 @@ const dedupe = (messages: ThreadMessage[]) => {
     if (m.id && seen.has(m.id)) continue;
     if (m.id) seen.add(m.id);
     const prev = out[out.length - 1];
-    const sameAsPrev = prev && `${prev.role}|${textOf(prev)}|${JSON.stringify(prev.component ?? {})}` === `${m.role}|${textOf(m)}|${JSON.stringify(m.component ?? {})}`;
+    const sameAsPrev =
+      prev && `${prev.role}|${textOf(prev)}|${JSON.stringify(prev.component ?? {})}` === `${m.role}|${textOf(m)}|${JSON.stringify(m.component ?? {})}`;
     if (!sameAsPrev) out.push(m);
   }
 
   return out;
 };
 
-const SIDE_EFFECT_COMPONENTS = new Set(["HighlightOverlay", "ScopeView", "StickyNote"]);
+const normalizeEntries = (messages: ThreadMessage[]): CanvasEntry[] => {
+  return messages
+    .filter((m) => m.role === "assistant" && m.component?.componentName)
+    .map((m, idx) => ({
+      key: `${m.id ?? `idx-${idx}`}:${m.component?.componentName ?? "unknown"}:${JSON.stringify(m.component?.props ?? {})}`,
+      componentName: m.component?.componentName ?? "",
+      props: (m.component?.props ?? {}) as Record<string, unknown>,
+      source: "thread" as const,
+    }));
+};
+
+const reduceSideEffects = (entries: CanvasEntry[]) => {
+  const latestSingle = new Map<string, CanvasEntry>();
+  const stickyNotes: CanvasEntry[] = [];
+
+  entries.forEach((entry) => {
+    if (entry.componentName === "StickyNote") {
+      stickyNotes.push(entry);
+      return;
+    }
+    latestSingle.set(entry.componentName, entry);
+  });
+
+  return [...latestSingle.values(), ...stickyNotes.slice(-3)];
+};
 
 export function TamboCanvas() {
   const { thread } = useTamboThread();
+  const [localEntries, setLocalEntries] = useState<CanvasEntry[]>([]);
+  const [dismissedCards, setDismissedCards] = useState<Record<string, true>>({});
+
   const messages = useMemo(() => dedupe((thread?.messages ?? []) as ThreadMessage[]), [thread?.messages]);
 
-  const components = useMemo(() => {
-    const entries = messages
-      .filter((m) => m.role === "assistant" && m.component?.componentName)
-      .map((m) => m.component as Required<ThreadMessage>["component"]);
+  useEffect(() => {
+    const onDispatch = (event: Event) => {
+      const customEvent = event as CustomEvent<LocalDispatch>;
+      const payload = customEvent.detail ?? {};
+      const incoming = (payload.components ?? [])
+        .filter((item) => item.componentName)
+        .map((item, idx) => ({
+          key: `local-${Date.now()}-${idx}-${item.componentName}`,
+          componentName: item.componentName ?? "",
+          props: (item.props ?? {}) as Record<string, unknown>,
+          source: "local" as const,
+        }));
 
-    const sideEffects = entries.filter((c) => SIDE_EFFECT_COMPONENTS.has(c.componentName ?? ""));
-    const cards = entries.filter((c) => !SIDE_EFFECT_COMPONENTS.has(c.componentName ?? ""));
+      logger.info("canvas", "received local component dispatch", {
+        replace: Boolean(payload.replace),
+        count: incoming.length,
+        components: incoming.map((item) => item.componentName),
+      });
+
+      setLocalEntries((prev) => (payload.replace ? incoming : [...prev.slice(-12), ...incoming]));
+    };
+
+    window.addEventListener("uiw:dispatch-components", onDispatch as EventListener);
+    return () => window.removeEventListener("uiw:dispatch-components", onDispatch as EventListener);
+  }, []);
+
+  const components = useMemo(() => {
+    const threadEntries = normalizeEntries(messages);
+    const sideEffects = [...threadEntries, ...localEntries].filter((c) => SIDE_EFFECT_COMPONENTS.has(c.componentName));
+    const cards = [...threadEntries, ...localEntries].filter((c) => !SIDE_EFFECT_COMPONENTS.has(c.componentName));
 
     return {
-      sideEffects,
-      cards: cards.slice(-2),
+      sideEffects: reduceSideEffects(sideEffects),
+      cards: cards.slice(-4).filter((entry) => !dismissedCards[entry.key]),
     };
-  }, [messages]);
+  }, [messages, localEntries, dismissedCards]);
 
   if (components.sideEffects.length + components.cards.length === 0) return null;
 
   return (
     <>
-      {components.sideEffects.map((entry, idx) => {
+      {components.sideEffects.map((entry) => {
         const def = tamboComponents.find((c) => c.name === entry.componentName);
         if (!def) return null;
-        logger.info("canvas", "mount side-effect component", { componentName: entry.componentName, props: entry.props });
+        logger.debug("canvas", "mount side-effect component", { source: entry.source, componentName: entry.componentName });
         const Component = def.component;
-        return <Component key={`se-${entry.componentName}-${idx}`} {...(entry.props ?? {})} />;
+        return <Component key={entry.key} {...entry.props} />;
       })}
 
       {components.cards.length > 0 ? (
-        <section
-          id="analysis-panel"
-          data-target-id
-          className="pointer-events-none fixed bottom-5 left-5 z-[80] flex max-h-[45vh] w-[min(480px,calc(100vw-2.5rem))] flex-col gap-3 overflow-auto"
-        >
-          {components.cards.map((entry, idx) => {
+        <div className="space-y-3" aria-live="polite">
+          {components.cards.map((entry) => {
             const def = tamboComponents.find((c) => c.name === entry.componentName);
             if (!def) return null;
             const Component = def.component;
             return (
-              <div key={`card-${entry.componentName}-${idx}`} className="pointer-events-auto">
-                <Component {...(entry.props ?? {})} />
+              <div key={entry.key} className="overflow-hidden rounded-2xl border border-cyan-200/70 bg-slate-900/90 shadow-xl shadow-cyan-900/20 backdrop-blur">
+                <div className="flex items-center justify-between border-b border-cyan-400/10 bg-slate-900/60 px-3 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">AI Panel</p>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedCards((prev) => ({ ...prev, [entry.key]: true }))}
+                    className="rounded p-1 text-cyan-200 transition hover:bg-slate-800 hover:text-cyan-50"
+                    aria-label="Dismiss panel"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                <Component {...entry.props} />
               </div>
             );
           })}
-        </section>
+        </div>
       ) : null}
     </>
   );

@@ -59,13 +59,13 @@ export const tamboComponents: TamboComponentDefinition[] = [
     propsSchema: z.object({
       title: z.string().nullish(),
       objective: z.string().nullish(),
-      severity: z.enum(["P1", "P2", "P3"]).nullish(),
+      severity: z.string().nullish().describe("Supports P1/P2/P3 as well as high/critical/low."),
       steps: z
         .array(
           z.object({
             step: z.string(),
             owner: z.string().nullish(),
-            status: z.enum(["todo", "in_progress", "done"]).nullish(),
+            status: z.string().nullish().describe("Supports todo, in_progress, done, pending, completed."),
           })
         )
         .nullish(),
