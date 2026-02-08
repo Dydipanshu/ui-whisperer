@@ -193,7 +193,7 @@ export async function getLiveRiskData(): Promise<LiveRiskData> {
     const topCity = [...cities].sort((a, b) => b.riskScore - a.riskScore)[0] ?? cities[0];
     const strongest = earthquakes[0]?.mag ?? 0;
 
-    const payload = {
+    const payload: LiveRiskData = {
       fetchedAtIso: new Date().toISOString(),
       sourceStatus: { openMeteo: "ok", usgs: "ok" },
       metrics: {
