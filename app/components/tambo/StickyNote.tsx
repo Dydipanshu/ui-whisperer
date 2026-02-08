@@ -70,6 +70,7 @@ const StickyNoteBase: React.FC<StickyNoteProps> = ({
   offsetY = 0,
 }) => {
   const [position, setPosition] = useState({ left: x, top: y });
+  const [isVisible, setIsVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const frameRef = useRef<number | null>(null);
 
@@ -80,13 +81,25 @@ const StickyNoteBase: React.FC<StickyNoteProps> = ({
       const target = targetId ? document.getElementById(targetId) : null;
       if (target) {
         const rect = target.getBoundingClientRect();
-        const anchored = computeAnchoredPosition(rect, placement, offsetX, offsetY);
-        const next = clampToViewport(anchored.left, anchored.top);
-        setPosition((prev) => (prev.left === next.left && prev.top === next.top ? prev : next));
+        const isInViewport =
+          rect.top >= 0 &&
+          rect.left >= 0 &&
+          rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+          rect.right <= (window.innerWidth || document.documentElement.clientWidth);
+
+        if (isInViewport) {
+          const anchored = computeAnchoredPosition(rect, placement, offsetX, offsetY);
+          const next = clampToViewport(anchored.left, anchored.top);
+          setPosition((prev) => (prev.left === next.left && prev.top === next.top ? prev : next));
+          setIsVisible(true);
+        } else {
+          setIsVisible(false);
+        }
         return;
       }
       const next = clampToViewport(x + offsetX, y + offsetY);
       setPosition((prev) => (prev.left === next.left && prev.top === next.top ? prev : next));
+      setIsVisible(true);
     };
 
     const scheduleUpdate = () => {
@@ -112,7 +125,7 @@ const StickyNoteBase: React.FC<StickyNoteProps> = ({
     };
   }, [targetId, placement, offsetX, offsetY, x, y, text]);
 
-  if (typeof document === 'undefined' || dismissed) return null;
+  if (typeof document === 'undefined' || dismissed || !isVisible) return null;
   
   return createPortal(
     <div

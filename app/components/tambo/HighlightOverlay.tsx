@@ -83,7 +83,7 @@ export const HighlightOverlay: React.FC<HighlightOverlayProps> = ({ targetIds = 
     const allTargetIds = Array.from(document.querySelectorAll("[data-target-id]"))
       .map((el) => (el as HTMLElement).id)
       .filter(Boolean);
-    const resolvedRequested = targetIds.map(resolveTargetId).filter((item): item is string => Boolean(item));
+    const resolvedRequested = (targetIds ?? []).map(resolveTargetId).filter((item): item is string => Boolean(item));
     const defaultMajor = MAJOR_TARGET_IDS.filter((id) => document.getElementById(id));
     const ids =
       normalizedMode === "all"

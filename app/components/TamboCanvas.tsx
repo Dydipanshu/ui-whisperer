@@ -49,12 +49,18 @@ const dedupe = (messages: ThreadMessage[]) => {
 const normalizeEntries = (messages: ThreadMessage[]): CanvasEntry[] => {
   return messages
     .filter((m) => m.role === "assistant" && m.component?.componentName)
-    .map((m, idx) => ({
-      key: `${m.id ?? `idx-${idx}`}:${m.component?.componentName ?? "unknown"}:${JSON.stringify(m.component?.props ?? {})}`,
-      componentName: m.component?.componentName ?? "",
-      props: (m.component?.props ?? {}) as Record<string, unknown>,
-      source: "thread" as const,
-    }));
+    .map((m, idx) => {
+      const props = (m.component?.props ?? {}) as Record<string, any>;
+      const key =
+        props.id ??
+        `${m.id ?? `idx-${idx}`}:${m.component?.componentName ?? "unknown"}:${JSON.stringify(props)}`;
+      return {
+        key: key,
+        componentName: m.component?.componentName ?? "",
+        props: props,
+        source: "thread" as const,
+      };
+    });
 };
 
 const reduceSideEffects = (entries: CanvasEntry[]) => {
@@ -76,8 +82,19 @@ export function TamboCanvas() {
   const { thread } = useTamboThread();
   const [localEntries, setLocalEntries] = useState<CanvasEntry[]>([]);
   const [dismissedCards, setDismissedCards] = useState<Record<string, true>>({});
+  const [removedComponentIds, setRemovedComponentIds] = useState<Record<string, true>>({});
 
   const messages = useMemo(() => dedupe((thread?.messages ?? []) as ThreadMessage[]), [thread?.messages]);
+
+  useEffect(() => {
+    for (const message of messages) {
+      const removedId = (message as any).removedComponent?.id;
+      if (removedId && !removedComponentIds[removedId]) {
+        logger.info("canvas", "removing component", { removedId });
+        setRemovedComponentIds((prev) => ({ ...prev, [removedId]: true }));
+      }
+    }
+  }, [messages, removedComponentIds]);
 
   useEffect(() => {
     const onDispatch = (event: Event) => {
@@ -106,7 +123,7 @@ export function TamboCanvas() {
   }, []);
 
   const components = useMemo(() => {
-    const threadEntries = normalizeEntries(messages);
+    const threadEntries = normalizeEntries(messages).filter((entry) => !removedComponentIds[entry.key]);
     const sideEffects = [...threadEntries, ...localEntries].filter((c) => SIDE_EFFECT_COMPONENTS.has(c.componentName));
     const cards = [...threadEntries, ...localEntries].filter((c) => !SIDE_EFFECT_COMPONENTS.has(c.componentName));
 
@@ -114,7 +131,7 @@ export function TamboCanvas() {
       sideEffects: reduceSideEffects(sideEffects),
       cards: cards.slice(-4).filter((entry) => !dismissedCards[entry.key]),
     };
-  }, [messages, localEntries, dismissedCards]);
+  }, [messages, localEntries, dismissedCards, removedComponentIds]);
 
   if (components.sideEffects.length + components.cards.length === 0) return null;
 

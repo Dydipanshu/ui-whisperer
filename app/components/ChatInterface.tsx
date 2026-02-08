@@ -29,19 +29,12 @@ const dedupe = (messages: ThreadMessage[]) => {
   const out: ThreadMessage[] = [];
 
   for (const m of messages) {
-    if (m.id && seen.has(m.id)) continue;
-    if (m.id) seen.add(m.id);
-    const prev = out[out.length - 1];
-    const sameAsPrev = prev && `${prev.role}|${textOf(prev)}|${componentSig(prev)}` === `${m.role}|${textOf(m)}|${componentSig(m)}`;
-    if (!sameAsPrev) out.push(m);
+    const key = `${m.role}|${textOf(m)}|${componentSig(m)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
   }
-
-  return out.filter((m, i, arr) => {
-    if (m.role !== "assistant" || m.component?.componentName) return true;
-    const prev = arr[i - 1];
-    const next = arr[i + 1];
-    return !(prev?.component?.componentName || next?.component?.componentName);
-  });
+  return out;
 };
 
 const MessageBubble = ({ message }: { message: ThreadMessage }) => {
@@ -68,99 +61,7 @@ const MessageBubble = ({ message }: { message: ThreadMessage }) => {
   );
 };
 
-const parseLocalAction = (input: string): LocalAction[] | null => {
-  const text = input.toLowerCase().trim();
-  const topMatch = text.match(/top\s*(\d+)/);
-  const topN = topMatch ? Number.parseInt(topMatch[1], 10) : null;
 
-  if (/unhighlight|clear\s+highlight|remove\s+highlight/.test(text)) {
-    return [{ componentName: "HighlightOverlay", props: { mode: "clear" } }];
-  }
-
-  if (/highlight\s+all|highlight\s+major\s+sections|highlight\s+major/.test(text)) {
-    return [{ componentName: "HighlightOverlay", props: { mode: "all", color: "blue" } }];
-  }
-
-  if (/highest\s+aqi|city\s+with\s+highest\s+aqi/.test(text)) {
-    return [
-      { componentName: "ScopeView", props: { mode: "highest_aqi" } },
-      { componentName: "HighlightOverlay", props: { mode: "set", color: "green", targetIds: ["city-board"] } },
-    ];
-  }
-
-  if (/highest\s+risk|top\s+risk\s+city/.test(text)) {
-    return [{ componentName: "ScopeView", props: { mode: "highest_risk" } }];
-  }
-
-  if (/strongest\s+earthquake|strongest\s+quake/.test(text)) {
-    return [
-      { componentName: "ScopeView", props: { mode: "strongest_quake" } },
-      { componentName: "HighlightOverlay", props: { mode: "set", color: "red", targetIds: ["quake-panel"] } },
-    ];
-  }
-
-  if (/top\s*\d+.*cities?.*earthquake|cities?.*earthquake.*top\s*\d+/.test(text) && topN) {
-    return [
-      { componentName: "ScopeView", props: { mode: "top_n_risk", limit: Math.max(1, Math.min(topN, 8)) } },
-      { componentName: "HighlightOverlay", props: { mode: "set", color: "blue", targetIds: ["city-board", "quake-panel"] } },
-      {
-        componentName: "UIExplanationCard",
-        props: {
-          title: `Top ${Math.max(1, Math.min(topN, 8))} cities in focus`,
-          summary: "The board is filtered to top-risk cities while earthquake context stays visible.",
-          bullets: ["Use 'show all' to reset.", "Use 'highest AQI' to narrow to one city."],
-        },
-      },
-    ];
-  }
-
-  if (/top\s+cities?.*earthquake|cities?.*earthquake/.test(text)) {
-    return [
-      { componentName: "ScopeView", props: { mode: "top_n_risk", limit: 5 } },
-      { componentName: "HighlightOverlay", props: { mode: "set", color: "blue", targetIds: ["city-board", "quake-panel"] } },
-    ];
-  }
-
-  if (/show\s+all|reset\s+view|show\s+everything/.test(text)) {
-    return [
-      { componentName: "ScopeView", props: { mode: "all" } },
-      { componentName: "HighlightOverlay", props: { mode: "clear" } },
-    ];
-  }
-
-  if (/mitigation\s+runbook|create\s+a?\s*runbook|runbook.*top\s+risks?|top\s+risks?.*runbook/.test(text)) {
-    return [
-      {
-        componentName: "RunbookCard",
-        props: {
-          title: "Mitigation Runbook",
-          objective: "Contain today's highest live risks and reduce operational impact in the next 2 hours.",
-          severity: "P1",
-          steps: [
-            { step: "Escalate highest-risk city and verify AQI/wind alerts", owner: "City Ops", status: "in_progress" },
-            { step: "Open incident bridge for quake-watch regions and assign command lead", owner: "Incident Commander", status: "todo" },
-            { step: "Publish customer-facing status update and next review checkpoint", owner: "Comms", status: "todo" },
-          ],
-        },
-      },
-      { componentName: "HighlightOverlay", props: { mode: "set", color: "red", targetIds: ["action-panel", "city-board", "quake-panel"] } },
-    ];
-  }
-
-  return null;
-};
-
-const dispatchLocalActions = (actions: LocalAction[]) => {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent("uiw:dispatch-components", {
-      detail: {
-        replace: true,
-        components: actions,
-      },
-    })
-  );
-};
 
 export function ChatInterface() {
   const { thread } = useTamboThread();
@@ -189,14 +90,6 @@ export function ChatInterface() {
     setValue("");
     if (!clean) return;
 
-    const localActions = parseLocalAction(clean);
-    if (localActions) {
-      logger.info("chat", "resolved command locally", { input: clean, actions: localActions.map((a) => a.componentName) });
-      dispatchLocalActions(localActions);
-      setSubmitError(null);
-      return;
-    }
-
     if (isPending || !thread?.id) {
       logger.warn("chat", "submit ignored due to pending state or missing thread", { isPending, hasThreadId: Boolean(thread?.id) });
       return;
@@ -210,7 +103,7 @@ export function ChatInterface() {
         threadId: thread.id,
         additionalContext: {
           ui_response_policy:
-            "For action intents emit components first. Prefer ScopeView and HighlightOverlay over prose. Return a single assistant response.",
+            "When the user asks for a specific action, emit the corresponding component. For general conversation, respond in a conversational tone.",
         },
       });
     } catch (error) {
