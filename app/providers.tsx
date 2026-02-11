@@ -92,7 +92,7 @@ RULES
   };
 
   return (
-    <TamboProvider apiKey={apiKey} components={tamboComponents} tools={[]} mcpServers={[]} contextHelpers={contextHelpers}>
+    <TamboProvider apiKey={apiKey} components={tamboComponents} tools={[]} mcpServers={['/api/tambo']} contextHelpers={contextHelpers}>
       {children}
     </TamboProvider>
   );
