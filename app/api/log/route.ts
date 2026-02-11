@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const safeMessage = message ?? "no-message";
     const logEntry = `[${safeTimestamp}] [${safeLevel}] [${safeScope}] ${safeMessage} ${details ? JSON.stringify(details) : ""}\n`;
 
-    const logFilePath = path.join(process.cwd(), 'debug.log');
+    const logFilePath = path.join('/tmp', 'debug.log');
     
     // Append to file
     fs.appendFileSync(logFilePath, logEntry);
