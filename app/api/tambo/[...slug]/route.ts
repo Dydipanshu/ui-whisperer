@@ -11,8 +11,9 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { slug: string[] } }
+  context: { params: { slug: string[] } }
 ) {
+  const { params } = context;
   const slug = params.slug.join("/");
   const url = `https://api.tambo.co/${slug}`;
 
