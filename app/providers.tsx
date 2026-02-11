@@ -91,8 +91,19 @@ RULES
 `,
   };
 
+  const mcpUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/tambo`
+      : "/api/tambo";
+
   return (
-    <TamboProvider apiKey={apiKey} components={tamboComponents} tools={[]} mcpServers={['/api/tambo']} contextHelpers={contextHelpers}>
+    <TamboProvider
+      apiKey={apiKey}
+      components={tamboComponents}
+      tools={[]}
+      mcpServers={[mcpUrl]}
+      contextHelpers={contextHelpers}
+    >
       {children}
     </TamboProvider>
   );
