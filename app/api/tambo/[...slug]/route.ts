@@ -11,11 +11,10 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function POST(
   req: NextRequest,
-  context: { params: { slug: string[] } }
+  context: { params: Promise<{ slug: string[] }> }
 ) {
-  const { params } = context;
-  const slug = params.slug.join("/");
-  const url = `https://api.tambo.co/${slug}`;
+  const { slug } = await context.params;
+  const url = `https://api.tambo.co/${slug.join("/")}`;
 
   try {
     const body = await req.json();
