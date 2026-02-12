@@ -99,9 +99,9 @@ RULES
   return (
     <TamboProvider
       apiKey={apiKey}
+      baseUrl={mcpUrl}
       components={tamboComponents}
       tools={[]}
-      mcpServers={[mcpUrl]}
       contextHelpers={contextHelpers}
     >
       {children}

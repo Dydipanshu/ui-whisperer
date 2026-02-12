@@ -1,35 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export async function OPTIONS(req: NextRequest) {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
-  return new NextResponse(null, { status: 204, headers });
-}
+const TAMBO_API_BASE = "https://api.tambo.co";
 
-export async function POST(
-  req: NextRequest,
-  context: { params: Promise<{ slug: string[] }> }
-) {
-  const { slug } = await context.params;
-  const url = `https://api.tambo.co/${slug.join("/")}`;
+async function proxyRequest(req: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
+  const { slug } = await params;
+  const searchParams = req.nextUrl.search;
+  const url = `${TAMBO_API_BASE}/${slug.join("/")}${searchParams}`;
+
+  const headers = new Headers(req.headers);
+  headers.delete("host");
+  headers.delete("connection");
 
   try {
-    const body = await req.json();
-    const tamboResponse = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: req.headers.get("Authorization") ?? "",
-      },
-      body: JSON.stringify(body),
-    });
+    const fetchOptions: RequestInit = {
+      method: req.method,
+      headers,
+      body: req.method !== "GET" && req.method !== "HEAD" ? await req.blob() : undefined,
+      cache: "no-store",
+    };
+
+    const tamboResponse = await fetch(url, fetchOptions);
 
     const responseHeaders = new Headers(tamboResponse.headers);
     responseHeaders.set("Access-Control-Allow-Origin", "*");
-
+    responseHeaders.delete("content-encoding");
 
     return new NextResponse(tamboResponse.body, {
       status: tamboResponse.status,
@@ -37,10 +31,23 @@ export async function POST(
       headers: responseHeaders,
     });
   } catch (error) {
-    console.error(`Failed to proxy request to ${url}`, error);
+    console.error(`[Proxy Error] ${req.method} ${url}:`, error);
     return NextResponse.json(
       { success: false, error: "Proxying failed" },
       { status: 500 }
     );
   }
 }
+
+export const GET = proxyRequest;
+export const POST = proxyRequest;
+export const OPTIONS = async () => {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
+};
