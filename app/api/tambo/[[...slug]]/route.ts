@@ -1,70 +1,73 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
-export const runtime = "edge"; // Use Edge Runtime for high-performance streaming
+export const runtime = "edge";
 
 const TAMBO_API_BASE = "https://api.tambo.co";
 
-async function proxyRequest(req: NextRequest, context: { params: Promise<{ slug?: string[] }> }) {
-  const { slug = [] } = await context.params;
+async function handleProxy(req: NextRequest, { params }: { params: Promise<{ slug?: string[] }> }) {
+  const { slug = [] } = await params;
   const searchParams = req.nextUrl.search;
   const path = slug.length > 0 ? `/${slug.join("/")}` : "";
   const url = `${TAMBO_API_BASE}${path}${searchParams}`;
 
-  // Forward all headers except those that would cause conflicts or reveal proxy details
+  // Forward necessary headers while stripping those that conflict with Edge Runtime
   const headers = new Headers(req.headers);
-  ["host", "connection", "origin", "referer", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"].forEach(h => {
-    headers.delete(h);
-  });
+  headers.delete("host");
+  headers.delete("connection");
+  headers.delete("origin");
+  headers.delete("referer");
+  headers.delete("x-forwarded-for");
+  headers.delete("x-forwarded-proto");
+  headers.delete("x-forwarded-host");
 
   try {
-    const fetchOptions: RequestInit = {
+    const res = await fetch(url, {
       method: req.method,
       headers,
       body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
       cache: "no-store",
-      // @ts-ignore - Required for streaming bodies in Edge/Node environments
+      // @ts-ignore - Required for streaming bodies in Edge
       duplex: "half",
-    };
+    });
 
-    // Edge runtime fetch supports streaming by default
-    const tamboResponse = await fetch(url, fetchOptions);
-
-    // Propagate critical streaming headers
-    const responseHeaders = new Headers(tamboResponse.headers);
+    const responseHeaders = new Headers(res.headers);
     responseHeaders.set("Access-Control-Allow-Origin", "*");
-    responseHeaders.delete("content-encoding");
     
-    // Ensure the client knows it's a stream
+    // Crucial for streaming: Remove compression/transfer headers that the Edge network handles itself
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("transfer-encoding");
+    responseHeaders.delete("connection");
+    responseHeaders.delete("keep-alive");
+
+    // If it's a stream, ensure the content type is correct
     if (url.includes("stream")) {
       responseHeaders.set("Content-Type", "text/event-stream");
-      responseHeaders.set("Cache-Control", "no-cache");
-      responseHeaders.set("Connection", "keep-alive");
+      responseHeaders.set("Cache-Control", "no-cache, no-transform");
     }
 
-    return new NextResponse(tamboResponse.body, {
-      status: tamboResponse.status,
-      statusText: tamboResponse.statusText,
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
       headers: responseHeaders,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[Proxy Error] ${req.method} ${url}:`, errorMessage);
-    return NextResponse.json(
-      { success: false, error: "Proxying failed", details: errorMessage },
-      { status: 500 }
-    );
+    console.error(`[Proxy Error] ${req.method} ${url}:`, error);
+    return new Response(JSON.stringify({ success: false, error: "Proxying failed" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
-export const GET = proxyRequest;
-export const POST = proxyRequest;
+export const GET = handleProxy;
+export const POST = handleProxy;
 export const OPTIONS = async () => {
-  return new NextResponse(null, {
+  return new Response(null, {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-tambo-project-id",
     },
   });
 };
