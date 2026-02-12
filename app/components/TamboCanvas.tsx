@@ -125,15 +125,13 @@ export function TamboCanvas() {
   const components = useMemo(() => {
     const threadEntries = normalizeEntries(messages).filter((entry) => !removedComponentIds[entry.key]);
     const sideEffects = [...threadEntries, ...localEntries].filter((c) => SIDE_EFFECT_COMPONENTS.has(c.componentName));
-    const cards = [...threadEntries, ...localEntries].filter((c) => !SIDE_EFFECT_COMPONENTS.has(c.componentName));
 
     return {
       sideEffects: reduceSideEffects(sideEffects),
-      cards: cards.slice(-4).filter((entry) => !dismissedCards[entry.key]),
     };
-  }, [messages, localEntries, dismissedCards, removedComponentIds]);
+  }, [messages, localEntries, removedComponentIds]);
 
-  if (components.sideEffects.length + components.cards.length === 0) return null;
+  if (components.sideEffects.length === 0) return null;
 
   return (
     <>
@@ -144,32 +142,6 @@ export function TamboCanvas() {
         const Component = def.component;
         return <Component key={entry.key} {...entry.props} />;
       })}
-
-      {components.cards.length > 0 ? (
-        <div className="space-y-3" aria-live="polite">
-          {components.cards.map((entry) => {
-            const def = tamboComponents.find((c) => c.name === entry.componentName);
-            if (!def) return null;
-            const Component = def.component;
-            return (
-              <div key={entry.key} className="overflow-hidden rounded-2xl border border-cyan-200/70 bg-slate-900/90 shadow-xl shadow-cyan-900/20 backdrop-blur">
-                <div className="flex items-center justify-between border-b border-cyan-400/10 bg-slate-900/60 px-3 py-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">AI Panel</p>
-                  <button
-                    type="button"
-                    onClick={() => setDismissedCards((prev) => ({ ...prev, [entry.key]: true }))}
-                    className="rounded p-1 text-cyan-200 transition hover:bg-slate-800 hover:text-cyan-50"
-                    aria-label="Dismiss panel"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-                <Component {...entry.props} />
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
     </>
   );
 }

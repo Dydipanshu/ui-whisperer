@@ -10,10 +10,13 @@ import { Input } from "./ui/input";
 import { logger } from "../utils/logger";
 import { TamboCanvas } from "./TamboCanvas";
 
+import { tamboComponents } from "../tambo-registry";
+
 type MessagePart = { type?: string; text?: string };
 type MessageComponent = { componentName?: string; props?: Record<string, unknown> };
 type ThreadMessage = { id?: string; role?: string; content?: MessagePart[]; component?: MessageComponent };
-type LocalAction = { componentName: string; props?: Record<string, unknown> };
+
+const SIDE_EFFECT_COMPONENTS = new Set(["HighlightOverlay", "ScopeView", "StickyNote"]);
 
 const textOf = (m: ThreadMessage) =>
   (m.content ?? [])
@@ -21,41 +24,44 @@ const textOf = (m: ThreadMessage) =>
     .map((p) => p.text?.trim())
     .join("\n");
 
-const componentSig = (m: ThreadMessage) =>
-  m.component?.componentName ? `${m.component.componentName}:${JSON.stringify(m.component.props ?? {})}` : "";
-
-const dedupe = (messages: ThreadMessage[]) => {
-  const seen = new Set<string>();
-  const out: ThreadMessage[] = [];
-
-  for (const m of messages) {
-    const key = `${m.role}|${textOf(m)}|${componentSig(m)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(m);
-  }
-  return out;
-};
-
-const MessageBubble = ({ message }: { message: ThreadMessage }) => {
+const MessageBubble = ({ message, isLatest }: { message: ThreadMessage; isLatest: boolean }) => {
   const isUser = message.role === "user";
   const hasText = Boolean(textOf(message));
-  if (!hasText) return null;
+  const componentName = message.component?.componentName;
+  const showComponent = isLatest && componentName && !SIDE_EFFECT_COMPONENTS.has(componentName);
+
+  if (!hasText && !showComponent) return null;
 
   return (
-    <div className={cn("mb-4 flex w-full", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("mb-6 flex w-full flex-col", isUser ? "items-end" : "items-start")}>
       <div className="max-w-[92%]">
-        <div className="mb-1 px-1 text-[11px] font-medium text-cyan-200/80">{isUser ? "You" : "Copilot"}</div>
-        <div
-          className={cn(
-            "rounded-2xl p-3 text-sm backdrop-blur",
-            isUser
-              ? "border border-cyan-300/30 bg-cyan-500/20 text-cyan-50"
-              : "border border-white/10 bg-slate-900/70 text-slate-100"
-          )}
-        >
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{textOf(message)}</p>
+        <div className={cn("mb-1 px-1 text-[11px] font-medium text-cyan-200/80", isUser && "text-right")}>
+          {isUser ? "You" : "Copilot"}
         </div>
+        
+        {hasText && (
+          <div
+            className={cn(
+              "rounded-2xl p-3 text-sm backdrop-blur mb-2",
+              isUser
+                ? "border border-cyan-300/30 bg-cyan-500/20 text-cyan-50"
+                : "border border-white/10 bg-slate-900/70 text-slate-100"
+            )}
+          >
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{textOf(message)}</p>
+          </div>
+        )}
+
+        {showComponent && (
+          <div className="overflow-hidden rounded-2xl border border-cyan-400/30 bg-slate-900/90 shadow-lg shadow-cyan-900/20">
+            {(() => {
+              const def = tamboComponents.find((c) => c.name === componentName);
+              if (!def) return null;
+              const Component = def.component;
+              return <Component {...(message.component?.props ?? {})} />;
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -162,7 +168,13 @@ export function ChatInterface() {
             Ask for focus views, notes, runbooks, or live data interpretation.
           </div>
         ) : (
-          messages.map((m, i) => <MessageBubble key={m.id ?? i} message={m} />)
+          messages.map((m, i) => {
+            // Find if this is the latest assistant message
+            const lastAssistantIndex = [...messages].reverse().findIndex(msg => msg.role === 'assistant');
+            const isLatest = i === (messages.length - 1 - lastAssistantIndex);
+            
+            return <MessageBubble key={m.id ?? i} message={m} isLatest={isLatest} />;
+          })
         )}
 
         <div className="mt-3">
