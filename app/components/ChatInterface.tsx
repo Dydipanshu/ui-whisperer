@@ -24,6 +24,22 @@ const textOf = (m: ThreadMessage) =>
     .map((p) => p.text?.trim())
     .join("\n");
 
+const componentSig = (m: ThreadMessage) =>
+  m.component?.componentName ? `${m.component.componentName}:${JSON.stringify(m.component.props ?? {})}` : "";
+
+const dedupe = (messages: ThreadMessage[]) => {
+  const seen = new Set<string>();
+  const out: ThreadMessage[] = [];
+
+  for (const m of messages) {
+    const key = `${m.role}|${textOf(m)}|${componentSig(m)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
+};
+
 const MessageBubble = ({ message, isLatest }: { message: ThreadMessage; isLatest: boolean }) => {
   const isUser = message.role === "user";
   const hasText = Boolean(textOf(message));
