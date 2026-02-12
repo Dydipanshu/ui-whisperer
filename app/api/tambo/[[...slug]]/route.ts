@@ -16,8 +16,10 @@ async function proxyRequest(req: NextRequest, context: { params: Promise<{ slug?
     const fetchOptions: RequestInit = {
       method: req.method,
       headers,
-      body: req.method !== "GET" && req.method !== "HEAD" ? await req.blob() : undefined,
+      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
       cache: "no-store",
+      // @ts-ignore - duplex is required for streaming bodies in some environments
+      duplex: "half",
     };
 
     const tamboResponse = await fetch(url, fetchOptions);
@@ -32,9 +34,10 @@ async function proxyRequest(req: NextRequest, context: { params: Promise<{ slug?
       headers: responseHeaders,
     });
   } catch (error) {
-    console.error(`[Proxy Error] ${req.method} ${url}:`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[Proxy Error] ${req.method} ${url}:`, errorMessage);
     return NextResponse.json(
-      { success: false, error: "Proxying failed" },
+      { success: false, error: "Proxying failed", details: errorMessage },
       { status: 500 }
     );
   }
