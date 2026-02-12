@@ -10,13 +10,10 @@ async function proxyRequest(req: NextRequest, context: { params: Promise<{ slug?
   const path = slug.length > 0 ? `/${slug.join("/")}` : "";
   const url = `${TAMBO_API_BASE}${path}${searchParams}`;
 
-  // Selective header forwarding
-  const headers = new Headers();
-  const forwardHeaders = ["authorization", "content-type", "accept", "x-tambo-project-id"];
-  
-  forwardHeaders.forEach(h => {
-    const val = req.headers.get(h);
-    if (val) headers.set(h, val);
+  // Forward all headers except those that would cause conflicts or reveal proxy details
+  const headers = new Headers(req.headers);
+  ["host", "connection", "origin", "referer", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"].forEach(h => {
+    headers.delete(h);
   });
 
   try {
@@ -25,6 +22,8 @@ async function proxyRequest(req: NextRequest, context: { params: Promise<{ slug?
       headers,
       body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
       cache: "no-store",
+      // @ts-ignore - Required for streaming bodies in Edge/Node environments
+      duplex: "half",
     };
 
     // Edge runtime fetch supports streaming by default
