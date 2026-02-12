@@ -99,7 +99,7 @@ RULES
   return (
     <TamboProvider
       apiKey={apiKey}
-      baseUrl={mcpUrl}
+      tamboUrl={mcpUrl}
       components={tamboComponents}
       tools={[]}
       contextHelpers={contextHelpers}

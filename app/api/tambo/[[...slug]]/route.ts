@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const TAMBO_API_BASE = "https://api.tambo.co";
 
-async function proxyRequest(req: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
-  const { slug } = await params;
+async function proxyRequest(req: NextRequest, context: { params: Promise<{ slug?: string[] }> }) {
+  const { slug = [] } = await context.params;
   const searchParams = req.nextUrl.search;
-  const url = `${TAMBO_API_BASE}/${slug.join("/")}${searchParams}`;
+  const path = slug.length > 0 ? `/${slug.join("/")}` : "";
+  const url = `${TAMBO_API_BASE}${path}${searchParams}`;
 
   const headers = new Headers(req.headers);
   headers.delete("host");
